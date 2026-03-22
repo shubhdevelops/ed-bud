@@ -1,0 +1,39 @@
+<svg viewBox="0 0 380 100" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366F1" />
+      <stop offset="50%" stop-color="#8B5CF6" />
+      <stop offset="100%" stop-color="#EC4899" />
+    </linearGradient>
+  </defs>
+
+  <!-- Icon group with more padding and smaller size -->
+  <g transform="translate(15, 20)">
+    <!-- Graduation cap and glasses scaled down -->
+    <g transform="scale(0.55)">
+      <!-- Graduation cap -->
+      <path d="M70,10 L15,40 L70,70 L125,40 Z" fill="url(#grad)" />
+      
+      <!-- Tassel -->
+      <circle cx="112" cy="50" r="6" fill="url(#grad)" />
+      <path d="M112,40 L112,50" stroke="url(#grad)" stroke-width="4" />
+      
+      <!-- Glasses -->
+      <g transform="translate(0, 30)">
+        <circle cx="40" cy="70" r="23" fill="none" stroke="url(#grad)" stroke-width="9" />
+        <circle cx="100" cy="70" r="23" fill="none" stroke="url(#grad)" stroke-width="9" />
+        <path d="M63,70 L77,70" stroke="url(#grad)" stroke-width="6" />
+      </g>
+    </g>
+  </g>
+
+  <!-- Brand Name with reduced padding -->
+  <text x="110" y="55" font-family="Segoe UI, sans-serif" font-size="32" font-weight="700" fill="url(#grad)">
+    StudyBuddy
+  </text>
+
+  <!-- Tagline -->
+  <text x="110" y="80" font-family="Segoe UI, sans-serif" font-size="14" fill="#6B7280">
+    Learn faster, smarter, and better
+  </text>
+</svg>
