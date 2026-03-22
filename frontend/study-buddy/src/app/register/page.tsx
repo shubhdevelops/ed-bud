@@ -26,22 +26,52 @@ export default function RegisterPage() {
     }));
   };
 
+  // const handleSubmit = async (e: React.FormEvent) => {
+  //   e.preventDefault();
+  //   setError("");
+
+  //   try {
+  //     localStorage.setItem("user", JSON.stringify(formData));
+  //     router.push("/");
+  //   } catch (error) {
+  //     if (error instanceof Error) {
+  //       setError(error.message);
+  //     } else {
+  //       setError("An error occurred during registration");
+  //     }
+  //   }
+  // };
+
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
+  e.preventDefault();
+  setError("");
 
-    try {
-      localStorage.setItem("user", JSON.stringify(formData));
-      router.push("/");
-    } catch (error) {
-      if (error instanceof Error) {
-        setError(error.message);
-      } else {
-        setError("An error occurred during registration");
-      }
+  try {
+    const res = await fetch("http://127.0.0.1:5001/api/users", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(formData),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || "Signup failed");
     }
-  };
 
+    console.log("User created:", data);
+
+    // Optional: store user
+    localStorage.setItem("user", JSON.stringify(data.user));
+
+    router.push("/login"); // go to login page
+
+  } catch (error: any) {
+    setError(error.message);
+  }
+};
   return (
     <div className="min-h-screen flex items-center justify-center bg-background relative overflow-hidden">
       {/* Background gradient effects */}

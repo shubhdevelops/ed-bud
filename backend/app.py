@@ -10,7 +10,7 @@ import threading
 import uuid
 # latest comment1 
 
-# from flask_pymongo import PyMongo
+from flask_pymongo import PyMongo
 from flask_bcrypt import Bcrypt
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -57,11 +57,20 @@ load_dotenv()
 
 
 # app.config["MONGO_URI"] = os.environ.get("MONGO_URI", "MONGO_URI")
+# replaced with 
+mongo_uri = os.environ.get("MONGO_URI")
+
+print("DEBUG MONGO_URI =", mongo_uri)  # keep this for now
+
+if not mongo_uri:
+    raise ValueError("❌ MONGO_URI not found. Check your .env file")
+
+app.config["MONGO_URI"] = mongo_uri
 
 # latest comment 1
 
 # app.config["MONGO_URI"] = "mongodb://localhost:27017/your_db_name"
-# mongo = PyMongo(app)
+mongo = PyMongo(app)
 
 # Create indexes for email uniqueness
 
@@ -72,6 +81,14 @@ load_dotenv()
 #         print("MongoDB connected successfully")
 #     except Exception as e:
 #         print(f"Error connecting to MongoDB: {str(e)}")
+
+with app.app_context():
+    try:
+        mongo.db.command("ping")  # real connection test
+        mongo.db.users.create_index("email", unique=True)
+        print("✅ MongoDB connected successfully")
+    except Exception as e:
+        print(f"❌ MongoDB connection failed: {str(e)}")
 
 bcrypt = Bcrypt(app)
 
