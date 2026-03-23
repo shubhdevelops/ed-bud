@@ -15,6 +15,9 @@ import {
   X,
   ChevronRight,
   User,
+  MessageCircle,
+  Calendar,
+  Brain,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 
@@ -56,6 +59,21 @@ export function Sidebar() {
       label: "Upload",
       href: "/",
       icon: <Upload className="w-5 h-5" />,
+    },
+    {
+      label: "AI Tutor",
+      href: "/tutor",
+      icon: <MessageCircle className="w-5 h-5" />,
+    },
+    {
+      label: "Study Planner",
+      href: "/planner",
+      icon: <Calendar className="w-5 h-5" />,
+    },
+    {
+      label: "Practice",
+      href: "/practice",
+      icon: <Brain className="w-5 h-5" />,
     },
     {
       label: "History",

@@ -8,27 +8,81 @@ import requests
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# OpenRouter configuration
+# --- API Configuration ---
+# We support two providers: Groq (preferred) and OpenRouter (fallback)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Multiple free models — if one is rate-limited, try the next
-FREE_MODELS = [
+# Groq free-tier models (30 req/min, very fast)
+GROQ_MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "gemma2-9b-it",
+]
+
+# OpenRouter free models (fallback)
+OPENROUTER_MODELS = [
     "mistralai/mistral-small-3.1-24b-instruct:free",
-    "google/gemma-3-27b-it:free",
     "google/gemma-3-12b-it:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
     "meta-llama/llama-3.2-3b-instruct:free",
-    "nousresearch/hermes-3-llama-3.1-405b:free",
-    "nvidia/nemotron-3-super-120b-a12b:free",
-    "qwen/qwen3-4b:free",
 ]
 
 
+def _call_groq(prompt, max_retries=2):
+    """Call Groq API — very fast, generous free tier."""
+    if not GROQ_API_KEY:
+        return None
+
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    for model in GROQ_MODELS:
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Groq: trying {model} (attempt {attempt + 1})")
+                response = requests.post(
+                    GROQ_BASE_URL,
+                    headers=headers,
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 4096,
+                    },
+                    timeout=60,
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    content = data["choices"][0]["message"]["content"]
+                    logger.info(f"Groq success with {model}")
+                    return content
+                elif response.status_code == 429:
+                    logger.warning(f"Groq {model} rate-limited. Waiting 10s...")
+                    time.sleep(10)
+                    continue
+                else:
+                    logger.warning(f"Groq {model}: {response.status_code}")
+                    break  # Try next model
+            except requests.exceptions.Timeout:
+                logger.warning(f"Groq {model} timed out")
+                break
+            except Exception as e:
+                logger.warning(f"Groq {model} error: {str(e)}")
+                break
+
+    return None
+
+
 def _call_openrouter(prompt):
-    """
-    Call OpenRouter API — cycles through free models until one works.
-    """
+    """Call OpenRouter API as fallback."""
+    if not OPENROUTER_API_KEY:
+        return None
+
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -36,76 +90,42 @@ def _call_openrouter(prompt):
         "X-Title": "StudyBuddy",
     }
 
-    last_error = None
-
-    for model in FREE_MODELS:
+    for model in OPENROUTER_MODELS:
         try:
-            logger.info(f"Trying model: {model}")
-
-            payload = {
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-            }
-
             response = requests.post(
                 OPENROUTER_BASE_URL,
                 headers=headers,
-                json=payload,
-                timeout=90,
+                json={"model": model, "messages": [{"role": "user", "content": prompt}]},
+                timeout=60,
             )
-
             if response.status_code == 200:
                 data = response.json()
-                content = data["choices"][0]["message"]["content"]
-                logger.info(f"Success with model: {model}")
-                return content
-            elif response.status_code == 429:
-                logger.warning(f"Model {model} rate-limited (429). Trying next...")
-                last_error = f"All models rate-limited"
-                time.sleep(2)  # Brief pause before trying next model
-                continue
-            else:
-                logger.warning(f"Model {model} returned {response.status_code}. Trying next...")
-                last_error = f"API error {response.status_code}"
-                continue
-
-        except requests.exceptions.Timeout:
-            logger.warning(f"Model {model} timed out. Trying next...")
-            last_error = "Timeout"
-            continue
-        except Exception as e:
-            logger.warning(f"Model {model} failed: {str(e)}. Trying next...")
-            last_error = str(e)
+                return data["choices"][0]["message"]["content"]
+        except Exception:
             continue
 
-    # All models failed — wait 30s and retry the first model once more
-    logger.warning("All models failed. Waiting 30s for rate limit reset...")
-    time.sleep(30)
+    return None
 
-    try:
-        payload = {
-            "model": FREE_MODELS[0],
-            "messages": [{"role": "user", "content": prompt}],
-        }
-        response = requests.post(
-            OPENROUTER_BASE_URL,
-            headers=headers,
-            json=payload,
-            timeout=90,
-        )
-        if response.status_code == 200:
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
-    except Exception:
-        pass
 
-    raise Exception(f"All OpenRouter models failed: {last_error}")
+def _call_llm(prompt):
+    """Call LLM — tries Groq first, then OpenRouter."""
+    # Try Groq first (faster, better free tier)
+    result = _call_groq(prompt)
+    if result:
+        return result
+
+    # Fallback to OpenRouter
+    result = _call_openrouter(prompt)
+    if result:
+        return result
+
+    return None
 
 
 def generate_notes(transcript_text):
-    """Generate detailed lecture notes using OpenRouter."""
+    """Generate detailed lecture notes."""
     try:
-        logger.info("Generating notes via OpenRouter")
+        logger.info("Generating notes")
 
         prompt = f"""You are an AI that generates detailed, structured lecture notes from transcriptions.
 The format must be markdown. Add proper sections, bullet points, and formatting.
@@ -120,17 +140,22 @@ Guidelines:
 - Highlight key takeaways
 """
 
-        result = _call_openrouter(prompt)
-        logger.info("Notes generation successful")
+        result = _call_llm(prompt)
 
-        with open("outputs/llm_output.txt", "w", encoding="utf-8") as file:
-            file.write(result)
+        if result:
+            logger.info("Notes generation successful")
+            os.makedirs("outputs", exist_ok=True)
+            with open("outputs/llm_output.txt", "w", encoding="utf-8") as file:
+                file.write(result)
+            return result
 
-        return result
+        # Fallback: return formatted transcript
+        fallback = "## Notes\n\n*(AI notes generation temporarily unavailable — showing raw transcript)*\n\n"
+        fallback += str(transcript_text)[:5000]
+        return fallback
     except Exception as e:
         logger.error(f"Error generating notes: {str(e)}", exc_info=True)
-        # Fallback: return formatted transcript so user always sees content
-        fallback = "## Notes\n\n*(AI notes generation temporarily unavailable — showing raw transcript)*\n\n"
+        fallback = "## Notes\n\n*(AI notes generation failed — showing raw transcript)*\n\n"
         fallback += str(transcript_text)[:5000]
         return fallback
 
@@ -147,18 +172,19 @@ Return ONLY the JSON array, no other text.
 Transcript:
 {transcript_text}"""
 
-        response_text = _call_openrouter(prompt)
+        response_text = _call_llm(prompt)
+        if not response_text:
+            return []
 
+        # Clean markdown code blocks
         if response_text.startswith("```json"):
             response_text = response_text[7:]
         if response_text.startswith("```"):
             response_text = response_text[3:]
         if response_text.endswith("```"):
             response_text = response_text[:-3]
-
         response_text = response_text.strip()
 
-        # Find JSON array in response
         start = response_text.find('[')
         end = response_text.rfind(']')
         if start >= 0 and end > start:
@@ -168,8 +194,7 @@ Transcript:
             flashcards = json.loads(response_text)
             logger.info(f"Generated {len(flashcards)} flashcards")
             return flashcards
-        except json.JSONDecodeError as e:
-            logger.error(f"Error parsing flashcard JSON: {str(e)}")
+        except json.JSONDecodeError:
             return []
 
     except Exception as e:
@@ -191,9 +216,11 @@ Format:
 Transcript:
 {transcript_text}"""
 
-        response_text = _call_openrouter(prompt)
-        response_text = response_text.strip()
+        response_text = _call_llm(prompt)
+        if not response_text:
+            return {"topic": "Mind Map", "branches": []}
 
+        response_text = response_text.strip()
         if response_text.startswith("```json"):
             response_text = response_text[7:]
         if response_text.startswith("```"):
@@ -205,14 +232,13 @@ Transcript:
         end_idx = response_text.rfind('}')
 
         if start_idx == -1 or end_idx == -1:
-            raise ValueError("No JSON found in response")
+            return {"topic": "Mind Map", "branches": []}
 
         response_text = response_text[start_idx:end_idx + 1].strip()
-
         mindmap = json.loads(response_text)
 
         if not isinstance(mindmap, dict) or 'topic' not in mindmap:
-            raise ValueError("Invalid mind map structure")
+            return {"topic": "Mind Map", "branches": []}
 
         for branch in mindmap.get('branches', []):
             if 'type' not in branch:
@@ -220,15 +246,11 @@ Transcript:
             if 'subbranches' not in branch:
                 branch['subbranches'] = []
 
-        logger.info("Successfully generated mind map")
         return mindmap
 
     except Exception as e:
         logger.error(f"Error generating mind map: {str(e)}")
-        return {
-            "topic": "Mind Map",
-            "branches": [{"name": "Error", "type": "error", "subbranches": [{"name": "Generation failed", "description": str(e)}]}]
-        }
+        return {"topic": "Mind Map", "branches": []}
 
 
 def generate_quiz(transcript_text):
@@ -244,14 +266,15 @@ Format: [{{"question": "Q", "options": ["A","B","C","D"], "correctAnswer": 0}}]
 Transcript:
 {transcript_text}"""
 
-        response_text = _call_openrouter(prompt)
+        response_text = _call_llm(prompt)
+        if not response_text:
+            return []
 
         json_start = response_text.find('[')
         json_end = response_text.rfind(']') + 1
 
         if json_start >= 0 and json_end > json_start:
             quiz_data = json.loads(response_text[json_start:json_end])
-            logger.info(f"Generated {len(quiz_data)} quiz questions")
             return quiz_data
         return []
 

@@ -1065,6 +1065,427 @@ def get_history_item(task_id):
         logger.error(f"Error fetching history item: {e}")
         return jsonify({"error": str(e)}), 500
 
+# ==========================================
+# FEATURE 1: AI TUTOR
+# ==========================================
+tutor_conversations = {}
+
+@app.route("/api/tutor/chat", methods=["POST"])
+def tutor_chat():
+    """AI Tutor - context-aware doubt solving chat"""
+    try:
+        data = request.json
+        message = data.get("message", "")
+        history = data.get("history", [])
+        
+        if not message:
+            return jsonify({"error": "Message is required"}), 400
+        
+        # Build conversation context
+        conversation = "You are an expert AI tutor for students. You explain concepts clearly with examples. Use markdown formatting for better readability. If a student asks a question, provide detailed yet easy-to-understand explanations. Include relevant examples, analogies, and key formulas where applicable.\n\n"
+        
+        for msg in history[-10:]:  # Keep last 10 messages for context
+            role = "Student" if msg.get("role") == "user" else "Tutor"
+            conversation += f"{role}: {msg.get('content', '')}\n"
+        
+        conversation += f"Student: {message}\nTutor:"
+        
+        response = chat_with_context(conversation)
+        
+        return jsonify({"response": response})
+    except Exception as e:
+        logger.error(f"Tutor chat error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tutor/clear", methods=["POST"])
+def tutor_clear():
+    """Clear tutor conversation"""
+    return jsonify({"message": "Conversation cleared"})
+
+
+# ==========================================
+# FEATURE 2: STUDY PLANNER
+# ==========================================
+
+@app.route("/api/planner/generate", methods=["POST"])
+def generate_study_plan():
+    """Generate a personalized study plan using AI"""
+    try:
+        data = request.json
+        exam_name = data.get("examName", "")
+        exam_date = data.get("examDate", "")
+        subjects = data.get("subjects", "")
+        weak_areas = data.get("weakAreas", "")
+        daily_hours = data.get("dailyHours", 4)
+        
+        if not exam_name or not exam_date or not subjects:
+            return jsonify({"error": "Exam name, date, and subjects are required"}), 400
+        
+        prompt = f"""Generate a detailed daily study plan as a JSON object. Return ONLY valid JSON, no other text.
+
+Exam: {exam_name}
+Exam Date: {exam_date}
+Subjects/Topics: {subjects}
+Weak Areas: {weak_areas if weak_areas else 'None specified'}
+Daily Study Hours: {daily_hours}
+
+Return this exact JSON format:
+{{
+  "planName": "Study Plan for {exam_name}",
+  "totalDays": <number>,
+  "dailyHours": {daily_hours},
+  "schedule": [
+    {{
+      "day": 1,
+      "date": "YYYY-MM-DD",
+      "topics": [
+        {{
+          "subject": "Subject Name",
+          "topic": "Specific Topic",
+          "duration": "2 hours",
+          "priority": "high/medium/low",
+          "tips": "Brief study tip"
+        }}
+      ]
+    }}
+  ],
+  "weeklyGoals": ["Goal 1", "Goal 2"],
+  "tips": ["General tip 1", "General tip 2"]
+}}
+
+Create a realistic schedule covering all subjects, prioritizing weak areas. Limit to 14 days max."""
+
+        response = chat_with_context(prompt)
+        
+        # Parse JSON from response
+        try:
+            start = response.find('{')
+            end = response.rfind('}') + 1
+            if start >= 0 and end > start:
+                plan_data = json.loads(response[start:end])
+            else:
+                plan_data = {"planName": f"Study Plan for {exam_name}", "schedule": [], "tips": ["Plan generation failed, please retry"]}
+        except json.JSONDecodeError:
+            plan_data = {"planName": f"Study Plan for {exam_name}", "schedule": [], "tips": ["Plan generation failed, please retry"]}
+        
+        # Save to MongoDB
+        plan_doc = {
+            "examName": exam_name,
+            "examDate": exam_date,
+            "subjects": subjects,
+            "weakAreas": weak_areas,
+            "dailyHours": daily_hours,
+            "plan": plan_data,
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "userId": data.get("userId", "anonymous")
+        }
+        
+        result = mongo.db.study_plans.insert_one(plan_doc)
+        plan_data["_id"] = str(result.inserted_id)
+        
+        return jsonify(plan_data)
+    except Exception as e:
+        logger.error(f"Study planner error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/planner/list", methods=["GET"])
+def list_study_plans():
+    """List all saved study plans"""
+    try:
+        plans = list(mongo.db.study_plans.find().sort("createdAt", -1).limit(10))
+        for plan in plans:
+            plan["_id"] = str(plan["_id"])
+        return jsonify(plans)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/planner/<plan_id>", methods=["GET"])
+def get_study_plan(plan_id):
+    """Get a specific study plan"""
+    try:
+        plan = mongo.db.study_plans.find_one({"_id": ObjectId(plan_id)})
+        if plan:
+            plan["_id"] = str(plan["_id"])
+            return jsonify(plan)
+        return jsonify({"error": "Plan not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/planner/<plan_id>/rebalance", methods=["PUT"])
+def rebalance_study_plan(plan_id):
+    """Rebalance a study plan based on progress"""
+    try:
+        data = request.json
+        completed_topics = data.get("completedTopics", [])
+        new_weak_areas = data.get("newWeakAreas", "")
+        
+        plan = mongo.db.study_plans.find_one({"_id": ObjectId(plan_id)})
+        if not plan:
+            return jsonify({"error": "Plan not found"}), 404
+        
+        prompt = f"""Rebalance this study plan. Some topics are completed, focus remaining time on incomplete and weak areas.
+Return ONLY valid JSON in the same format as before.
+
+Original exam: {plan.get('examName')}
+Exam date: {plan.get('examDate')}
+Subjects: {plan.get('subjects')}
+Completed topics: {', '.join(completed_topics) if completed_topics else 'None'}
+New weak areas: {new_weak_areas if new_weak_areas else 'None'}
+Daily hours: {plan.get('dailyHours', 4)}
+
+Return JSON with planName, schedule (array of days with topics), and tips."""
+
+        response = chat_with_context(prompt)
+        
+        try:
+            start = response.find('{')
+            end = response.rfind('}') + 1
+            if start >= 0 and end > start:
+                new_plan = json.loads(response[start:end])
+            else:
+                return jsonify({"error": "Failed to generate rebalanced plan"}), 500
+        except json.JSONDecodeError:
+            return jsonify({"error": "Failed to parse rebalanced plan"}), 500
+        
+        mongo.db.study_plans.update_one(
+            {"_id": ObjectId(plan_id)},
+            {"$set": {"plan": new_plan, "updatedAt": datetime.now(timezone.utc).isoformat()}}
+        )
+        
+        new_plan["_id"] = plan_id
+        return jsonify(new_plan)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ==========================================
+# FEATURE 3: ADAPTIVE PRACTICE
+# ==========================================
+
+@app.route("/api/practice/generate", methods=["POST"])
+def generate_practice():
+    """Generate practice questions from a topic"""
+    try:
+        data = request.json
+        topic = data.get("topic", "")
+        num_questions = data.get("numQuestions", 5)
+        difficulty = data.get("difficulty", "medium")
+        
+        if not topic:
+            return jsonify({"error": "Topic is required"}), 400
+        
+        prompt = f"""Generate {num_questions} practice questions about: {topic}
+Difficulty: {difficulty}
+
+Return ONLY a JSON array, no other text. Each question must have this format:
+[
+  {{
+    "id": 1,
+    "question": "The question text",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "correctAnswer": 0,
+    "explanation": "Brief explanation of why the answer is correct",
+    "topic": "{topic}",
+    "difficulty": "{difficulty}"
+  }}
+]"""
+
+        response = chat_with_context(prompt)
+        
+        try:
+            start = response.find('[')
+            end = response.rfind(']') + 1
+            if start >= 0 and end > start:
+                questions = json.loads(response[start:end])
+            else:
+                questions = []
+        except json.JSONDecodeError:
+            questions = []
+        
+        # Add IDs if missing
+        for i, q in enumerate(questions):
+            if "id" not in q:
+                q["id"] = i + 1
+        
+        return jsonify({"questions": questions, "topic": topic})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/practice/upload", methods=["POST"])
+def practice_from_file():
+    """Extract and generate questions from uploaded PDF"""
+    try:
+        if "file" not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+        
+        file = request.files["file"]
+        if not file.filename.endswith(".pdf"):
+            return jsonify({"error": "Only PDF files are supported"}), 400
+        
+        # Read PDF
+        reader = PdfReader(file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() or ""
+        
+        if not text.strip():
+            return jsonify({"error": "Could not extract text from PDF"}), 400
+        
+        # Truncate text
+        text = text[:5000]
+        
+        num_questions = int(request.form.get("numQuestions", 5))
+        
+        prompt = f"""Based on this document content, generate {num_questions} practice questions as flashcards.
+Return ONLY a JSON array, no other text.
+
+Document content:
+{text}
+
+Format:
+[
+  {{
+    "id": 1,
+    "question": "Question from the document",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "correctAnswer": 0,
+    "explanation": "Why this is correct",
+    "topic": "Auto-detected topic",
+    "difficulty": "medium"
+  }}
+]"""
+
+        response = chat_with_context(prompt)
+        
+        try:
+            start = response.find('[')
+            end = response.rfind(']') + 1
+            if start >= 0 and end > start:
+                questions = json.loads(response[start:end])
+            else:
+                questions = []
+        except json.JSONDecodeError:
+            questions = []
+        
+        for i, q in enumerate(questions):
+            if "id" not in q:
+                q["id"] = i + 1
+        
+        return jsonify({"questions": questions, "source": file.filename})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/practice/submit", methods=["POST"])
+def submit_practice():
+    """Submit practice answers and analyze weak areas"""
+    try:
+        data = request.json
+        answers = data.get("answers", [])
+        questions = data.get("questions", [])
+        
+        if not answers or not questions:
+            return jsonify({"error": "Answers and questions required"}), 400
+        
+        # Analyze results
+        total = len(questions)
+        correct = 0
+        weak_topics = {}
+        results = []
+        
+        for q in questions:
+            qid = q.get("id", 0)
+            user_answer = None
+            time_taken = 0
+            
+            for a in answers:
+                if a.get("questionId") == qid:
+                    user_answer = a.get("answer")
+                    time_taken = a.get("timeTaken", 0)
+                    break
+            
+            is_correct = user_answer == q.get("correctAnswer")
+            if is_correct:
+                correct += 1
+            else:
+                topic = q.get("topic", "General")
+                weak_topics[topic] = weak_topics.get(topic, 0) + 1
+            
+            results.append({
+                "questionId": qid,
+                "correct": is_correct,
+                "userAnswer": user_answer,
+                "correctAnswer": q.get("correctAnswer"),
+                "explanation": q.get("explanation", ""),
+                "timeTaken": time_taken
+            })
+        
+        # Save session to MongoDB
+        session = {
+            "answers": results,
+            "score": correct,
+            "total": total,
+            "accuracy": round((correct / total) * 100, 1) if total > 0 else 0,
+            "weakTopics": weak_topics,
+            "createdAt": datetime.now(timezone.utc).isoformat()
+        }
+        
+        mongo.db.practice_sessions.insert_one(session)
+        session.pop("_id", None)
+        
+        return jsonify(session)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/practice/targeted", methods=["POST"])
+def targeted_practice():
+    """Generate targeted questions for weak areas"""
+    try:
+        data = request.json
+        weak_topics = data.get("weakTopics", {})
+        
+        if not weak_topics:
+            return jsonify({"error": "No weak topics provided"}), 400
+        
+        topics_str = ", ".join(weak_topics.keys())
+        
+        prompt = f"""Generate 5 targeted practice questions focusing on these weak areas: {topics_str}
+Make these questions slightly easier to help the student build confidence.
+Return ONLY a JSON array, no other text.
+
+Format:
+[
+  {{
+    "id": 1,
+    "question": "Question text",
+    "options": ["A", "B", "C", "D"],
+    "correctAnswer": 0,
+    "explanation": "Explanation",
+    "topic": "Topic name",
+    "difficulty": "easy"
+  }}
+]"""
+
+        response = chat_with_context(prompt)
+        
+        try:
+            start = response.find('[')
+            end = response.rfind(']') + 1
+            if start >= 0 and end > start:
+                questions = json.loads(response[start:end])
+            else:
+                questions = []
+        except json.JSONDecodeError:
+            questions = []
+        
+        for i, q in enumerate(questions):
+            if "id" not in q:
+                q["id"] = i + 1
+        
+        return jsonify({"questions": questions, "focus": topics_str})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     logger.info(f"🚀 Server running on http://127.0.0.1:{PORT}")
     app.run(host="0.0.0.0", port=PORT, debug=True)
