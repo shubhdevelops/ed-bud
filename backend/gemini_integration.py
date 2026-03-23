@@ -1,346 +1,260 @@
-import google.generativeai as genai
 import os
 import logging
 import json
+import time
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configure the Gemini API
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-genai.configure(api_key=GOOGLE_API_KEY)
+# OpenRouter configuration
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+# Multiple free models — if one is rate-limited, try the next
+FREE_MODELS = [
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+    "google/gemma-3-27b-it:free",
+    "google/gemma-3-12b-it:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "nousresearch/hermes-3-llama-3.1-405b:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "qwen/qwen3-4b:free",
+]
+
+
+def _call_openrouter(prompt):
+    """
+    Call OpenRouter API — cycles through free models until one works.
+    """
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "http://localhost:3000",
+        "X-Title": "StudyBuddy",
+    }
+
+    last_error = None
+
+    for model in FREE_MODELS:
+        try:
+            logger.info(f"Trying model: {model}")
+
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+            }
+
+            response = requests.post(
+                OPENROUTER_BASE_URL,
+                headers=headers,
+                json=payload,
+                timeout=90,
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                content = data["choices"][0]["message"]["content"]
+                logger.info(f"Success with model: {model}")
+                return content
+            elif response.status_code == 429:
+                logger.warning(f"Model {model} rate-limited (429). Trying next...")
+                last_error = f"All models rate-limited"
+                time.sleep(2)  # Brief pause before trying next model
+                continue
+            else:
+                logger.warning(f"Model {model} returned {response.status_code}. Trying next...")
+                last_error = f"API error {response.status_code}"
+                continue
+
+        except requests.exceptions.Timeout:
+            logger.warning(f"Model {model} timed out. Trying next...")
+            last_error = "Timeout"
+            continue
+        except Exception as e:
+            logger.warning(f"Model {model} failed: {str(e)}. Trying next...")
+            last_error = str(e)
+            continue
+
+    # All models failed — wait 30s and retry the first model once more
+    logger.warning("All models failed. Waiting 30s for rate limit reset...")
+    time.sleep(30)
+
+    try:
+        payload = {
+            "model": FREE_MODELS[0],
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        response = requests.post(
+            OPENROUTER_BASE_URL,
+            headers=headers,
+            json=payload,
+            timeout=90,
+        )
+        if response.status_code == 200:
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+    except Exception:
+        pass
+
+    raise Exception(f"All OpenRouter models failed: {last_error}")
+
 
 def generate_notes(transcript_text):
-    """
-    Generate detailed lecture notes using Google's Gemini model.
-    
-    Args:
-        transcript_text (str): The transcript text to generate notes from
-        
-    Returns:
-        str: Generated notes in markdown format
-    """
+    """Generate detailed lecture notes using OpenRouter."""
     try:
-        # Initialize the model - using gemini-1.5-pro which is the latest supported model
-        logger.info("Initializing Gemini model")
-        model = genai.GenerativeModel('gemini-1.5-pro')
-        
-        # Create the prompt
-        prompt = f"""You are an AI that generates detailed, structured, and accurate lecture notes from transcriptions. 
-        Minimum 2-3 page response is required. The format must be markdown that can be embedded into a website. 
-        Add proper line breaks and bullet points for lists, subtopics, and lines to look it good. 
-        You may add information that is not present in the transcription, but ensure it is relevant and accurate.
+        logger.info("Generating notes via OpenRouter")
 
-        Generate detailed and structured lecture notes from the following transcription:
-        {transcript_text}
+        prompt = f"""You are an AI that generates detailed, structured lecture notes from transcriptions.
+The format must be markdown. Add proper sections, bullet points, and formatting.
 
-        Please follow these guidelines:
-        - Organize the notes into clear sections (e.g., Introduction, Key Concepts, Examples, Summary)
-        - Include definitions, explanations, and key points made by the lecturer
-        - Ensure the notes are comprehensive, accurate, and coherent
-        - Break down complex ideas into simpler terms
-        - Use bullet points for lists and subtopics
-        - If possible, highlight any key takeaways or important conclusions
-        - Maintain the authenticity of the information provided in the transcription
-        """
-        
-        # Generate the response
-        logger.info("Generating content with Gemini")
-        response = model.generate_content(prompt)
-        logger.info("Content generation successful")
-        
-        # Save to file for caching
-        with open("outputs/llm_output.txt", "w") as file:
-            file.write(response.text)
-            file.close()
-        
-        return response.text
+Generate detailed lecture notes from this transcription:
+{transcript_text}
+
+Guidelines:
+- Organize into sections (Introduction, Key Concepts, Examples, Summary)
+- Include definitions and key points
+- Use bullet points for lists
+- Highlight key takeaways
+"""
+
+        result = _call_openrouter(prompt)
+        logger.info("Notes generation successful")
+
+        with open("outputs/llm_output.txt", "w", encoding="utf-8") as file:
+            file.write(result)
+
+        return result
     except Exception as e:
-        logger.error(f"Error generating notes with Gemini: {str(e)}", exc_info=True)
-        # Return a fallback response in case of error
-        return f"Error generating notes: {str(e)}"
+        logger.error(f"Error generating notes: {str(e)}", exc_info=True)
+        # Fallback: return formatted transcript so user always sees content
+        fallback = "## Notes\n\n*(AI notes generation temporarily unavailable — showing raw transcript)*\n\n"
+        fallback += str(transcript_text)[:5000]
+        return fallback
+
 
 def generate_flashcards(transcript_text):
-    """Generate flashcards from transcript text using Gemini."""
+    """Generate flashcards from transcript text."""
     try:
         logger.info("Starting flashcard generation")
-        
-        # Initialize the model
-        logger.info("Initializing Gemini model")
-        model = genai.GenerativeModel('gemini-1.5-pro')
-        
-        # Construct the prompt for Gemini
-        prompt = f"""Based on the following transcript, generate 5-7 meaningful flashcards.
-        Each flashcard should have a question on the front and a concise answer on the back.
-        Focus on key concepts, definitions, and important points.
-        Format the response as a JSON array of objects with 'question' and 'answer' fields.
-        Do not include any markdown formatting or code block syntax.
 
-        Transcript:
-        {transcript_text}
+        prompt = f"""Generate 5-7 flashcards from this transcript.
+Format as a JSON array with 'question' and 'answer' fields.
+Return ONLY the JSON array, no other text.
 
-        Example format:
-        [
-            {{
-                "question": "What is the main topic discussed?",
-                "answer": "The main topic is..."
-            }},
-            {{
-                "question": "What are the key points about X?",
-                "answer": "The key points are..."
-            }}
-        ]"""
+Transcript:
+{transcript_text}"""
 
-        # Get response from Gemini
-        response = model.generate_content(prompt)
-        logger.info("Received response from Gemini")
-        
-        # Clean the response text to remove any markdown formatting
-        response_text = response.text
-        if response_text.startswith("```json"):
-            response_text = response_text[7:]  # Remove ```json
-        if response_text.startswith("```"):
-            response_text = response_text[3:]  # Remove ```
-        if response_text.endswith("```"):
-            response_text = response_text[:-3]  # Remove trailing ```
-        
-        # Strip any leading/trailing whitespace
-        response_text = response_text.strip()
-        
-        try:
-            # Parse the cleaned JSON
-            flashcards = json.loads(response_text)
-            logger.info(f"Successfully generated {len(flashcards)} flashcards")
-            return flashcards
-        except json.JSONDecodeError as e:
-            logger.error(f"Error parsing flashcard JSON: {str(e)}")
-            logger.error(f"Failed to parse JSON: {response_text}")
-            return []
-            
-    except Exception as e:
-        logger.error(f"Error generating flashcards: {str(e)}")
-        return [] 
+        response_text = _call_openrouter(prompt)
 
-def generate_mindmap(transcript_text):
-    """Generate a mind map structure from transcript text using Gemini."""
-    try:
-        logger.info("Starting mind map generation")
-        
-        # Initialize the model
-        logger.info("Initializing Gemini model")
-        model = genai.GenerativeModel('gemini-1.5-pro')
-        
-        # Construct the prompt for Gemini
-        prompt = f"""Based on the following transcript, generate a well-structured mind map.
-        Follow these specific guidelines for the mind map structure:
-
-        1. Central Topic:
-           - Should be the main subject/concept from the transcript
-           - Keep it concise but descriptive
-
-        2. Main Branches (4-6 branches):
-           - Each branch should represent a major category or aspect
-           - Use single words or short phrases
-           - Common categories include: Key Concepts, Applications, Components, Principles, Methods, etc.
-
-        3. Sub-branches:
-           - Each main branch should have 2-4 sub-branches
-           - Use clear, concise terms
-           - Should directly relate to the parent branch
-           - Can include specific examples, details, or characteristics
-
-        4. Visual Organization:
-           - Ensure logical grouping of related concepts
-           - Maintain consistent level of detail across branches
-           - Use clear hierarchical relationships
-
-        Format the response as a JSON object with this exact structure:
-        {{
-            "topic": "Central Topic",
-            "branches": [
-                {{
-                    "name": "Main Branch 1",
-                    "type": "concept",  // concept, method, principle, application, etc.
-                    "subbranches": [
-                        {{ 
-                            "name": "Sub-branch 1.1",
-                            "description": "Brief explanation if needed"
-                        }}
-                    ]
-                }}
-            ]
-        }}
-
-        Analyze this transcript and create a comprehensive mind map:
-        {transcript_text}
-
-        Remember:
-        - Keep all text concise and clear
-        - Ensure logical connections between concepts
-        - Use meaningful branch types
-        - Focus on key concepts and their relationships
-        - Return ONLY the JSON object, no additional text or explanations"""
-
-        # Get response from Gemini
-        response = model.generate_content(prompt)
-        logger.info("Received response from Gemini")
-        
-        # Clean the response text to remove any markdown formatting
-        response_text = response.text.strip()
-        
-        # Remove any markdown code block syntax
         if response_text.startswith("```json"):
             response_text = response_text[7:]
         if response_text.startswith("```"):
             response_text = response_text[3:]
         if response_text.endswith("```"):
             response_text = response_text[:-3]
-        
-        # Find the first '{' and last '}' to extract just the JSON object
+
+        response_text = response_text.strip()
+
+        # Find JSON array in response
+        start = response_text.find('[')
+        end = response_text.rfind(']')
+        if start >= 0 and end > start:
+            response_text = response_text[start:end + 1]
+
+        try:
+            flashcards = json.loads(response_text)
+            logger.info(f"Generated {len(flashcards)} flashcards")
+            return flashcards
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing flashcard JSON: {str(e)}")
+            return []
+
+    except Exception as e:
+        logger.error(f"Error generating flashcards: {str(e)}")
+        return []
+
+
+def generate_mindmap(transcript_text):
+    """Generate a mind map structure from transcript text."""
+    try:
+        logger.info("Starting mind map generation")
+
+        prompt = f"""Generate a mind map as a JSON object from this transcript.
+Return ONLY the JSON, no other text.
+
+Format:
+{{"topic": "Central Topic", "branches": [{{"name": "Branch", "type": "concept", "subbranches": [{{"name": "Sub", "description": "Detail"}}]}}]}}
+
+Transcript:
+{transcript_text}"""
+
+        response_text = _call_openrouter(prompt)
+        response_text = response_text.strip()
+
+        if response_text.startswith("```json"):
+            response_text = response_text[7:]
+        if response_text.startswith("```"):
+            response_text = response_text[3:]
+        if response_text.endswith("```"):
+            response_text = response_text[:-3]
+
         start_idx = response_text.find('{')
         end_idx = response_text.rfind('}')
-        
+
         if start_idx == -1 or end_idx == -1:
-            raise ValueError("No valid JSON object found in response")
-            
+            raise ValueError("No JSON found in response")
+
         response_text = response_text[start_idx:end_idx + 1].strip()
-        
-        try:
-            # Parse the cleaned JSON
-            mindmap = json.loads(response_text)
-            
-            # Validate the structure
-            if not isinstance(mindmap, dict) or 'topic' not in mindmap or 'branches' not in mindmap:
-                raise ValueError("Invalid mind map structure")
-            
-            # Validate and process each branch
-            for branch in mindmap['branches']:
-                if not isinstance(branch, dict) or 'name' not in branch:
-                    raise ValueError("Invalid branch structure")
-                
-                # Ensure type exists
-                if 'type' not in branch:
-                    branch['type'] = 'concept'
-                
-                # Validate subbranches
-                if 'subbranches' in branch:
-                    if not isinstance(branch['subbranches'], list):
-                        branch['subbranches'] = []
-                    else:
-                        # Ensure each subbranch has required fields
-                        for subbranch in branch['subbranches']:
-                            if not isinstance(subbranch, dict) or 'name' not in subbranch:
-                                branch['subbranches'].remove(subbranch)
-                            if 'description' not in subbranch:
-                                subbranch['description'] = ""
-                else:
-                    branch['subbranches'] = []
-            
-            logger.info("Successfully generated and validated mind map structure")
-            return mindmap
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Error parsing mind map JSON: {str(e)}")
-            logger.error(f"Failed to parse JSON: {response_text}")
-            return {
-                "topic": "Error in Mind Map Generation",
-                "branches": [
-                    {
-                        "name": "Error",
-                        "type": "error",
-                        "subbranches": [
-                            {
-                                "name": "Failed to parse response",
-                                "description": str(e)
-                            }
-                        ]
-                    }
-                ]
-            }
-            
+
+        mindmap = json.loads(response_text)
+
+        if not isinstance(mindmap, dict) or 'topic' not in mindmap:
+            raise ValueError("Invalid mind map structure")
+
+        for branch in mindmap.get('branches', []):
+            if 'type' not in branch:
+                branch['type'] = 'concept'
+            if 'subbranches' not in branch:
+                branch['subbranches'] = []
+
+        logger.info("Successfully generated mind map")
+        return mindmap
+
     except Exception as e:
         logger.error(f"Error generating mind map: {str(e)}")
         return {
-            "topic": "Error in Mind Map Generation",
-            "branches": [
-                {
-                    "name": "Error",
-                    "type": "error",
-                    "subbranches": [
-                        {
-                            "name": "Generation failed",
-                            "description": str(e)
-                        }
-                    ]
-                }
-            ]
-        } 
+            "topic": "Mind Map",
+            "branches": [{"name": "Error", "type": "error", "subbranches": [{"name": "Generation failed", "description": str(e)}]}]
+        }
+
 
 def generate_quiz(transcript_text):
-    """
-    Generate quiz questions based on the transcript text.
-    
-    Args:
-        transcript_text (str): The transcript text to generate quiz questions from
-        
-    Returns:
-        list: A list of quiz questions with multiple choice options
-    """
+    """Generate quiz questions from transcript text."""
     try:
-        # Initialize the model
-        logger.info("Initializing Gemini model for quiz generation")
-        model = genai.GenerativeModel('gemini-1.5-pro')
-        
-        # Create the prompt
-        prompt = f"""You are an AI that generates meaningful multiple-choice quiz questions from transcriptions.
-        
-        Generate 5 multiple-choice quiz questions from the following transcription:
-        {transcript_text}
-        
-        Please follow these guidelines:
-        - Each question should have 4 options (A, B, C, D)
-        - One option should be the correct answer
-        - The questions should test understanding of key concepts from the transcript
-        - The questions should be challenging but fair
-        - The options should be plausible and related to the topic
-        - Format the response as a JSON array with the following structure:
-          [
-            {{
-              "question": "The question text",
-              "options": ["Option A", "Option B", "Option C", "Option D"],
-              "correctAnswer": 0  // Index of the correct answer (0-3)
-            }},
-            ...
-          ]
-        """
-        
-        # Generate the response
-        logger.info("Generating quiz questions with Gemini")
-        response = model.generate_content(prompt)
-        
-        # Extract the response text
-        response_text = response.text
-        
-        # Parse the JSON response
-        try:
-            # Find the JSON part in the response
-            json_start = response_text.find('[')
-            json_end = response_text.rfind(']') + 1
-            
-            if json_start >= 0 and json_end > json_start:
-                json_str = response_text[json_start:json_end]
-                quiz_data = json.loads(json_str)
-                logger.info(f"Successfully generated {len(quiz_data)} quiz questions")
-                return quiz_data
-            else:
-                logger.error("Could not find JSON in response")
-                return []
-        except json.JSONDecodeError as e:
-            logger.error(f"Error parsing JSON: {e}")
-            logger.error(f"Response text: {response_text}")
-            return []
-            
+        logger.info("Generating quiz questions")
+
+        prompt = f"""Generate 5 multiple-choice quiz questions as a JSON array.
+Return ONLY the JSON, no other text.
+
+Format: [{{"question": "Q", "options": ["A","B","C","D"], "correctAnswer": 0}}]
+
+Transcript:
+{transcript_text}"""
+
+        response_text = _call_openrouter(prompt)
+
+        json_start = response_text.find('[')
+        json_end = response_text.rfind(']') + 1
+
+        if json_start >= 0 and json_end > json_start:
+            quiz_data = json.loads(response_text[json_start:json_end])
+            logger.info(f"Generated {len(quiz_data)} quiz questions")
+            return quiz_data
+        return []
+
     except Exception as e:
         logger.error(f"Error generating quiz: {e}")
-        return [] 
+        return []

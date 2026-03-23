@@ -2,6 +2,9 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import os
 import logging
+from dotenv import load_dotenv
+load_dotenv()  # Must be called before imports that use env vars
+
 from google_speech import transcribe_audio
 from video_to_audio import convert_video_to_audio
 from gemini_integration import generate_notes, generate_flashcards, generate_mindmap, generate_quiz
@@ -13,7 +16,6 @@ import uuid
 from flask_pymongo import PyMongo
 from flask_bcrypt import Bcrypt
 from datetime import datetime, timezone
-from dotenv import load_dotenv
 from bson import ObjectId
 from bson.json_util import dumps
 import json
@@ -53,7 +55,7 @@ GCS_BUCKET_NAME = os.environ.get("GCS_BUCKET_NAME", "your-bucket-name")
 processing_tasks = {}
 
 # app/__init__.py
-load_dotenv()
+# load_dotenv() -- moved to top of file before imports
 
 
 # app.config["MONGO_URI"] = os.environ.get("MONGO_URI", "MONGO_URI")
@@ -238,6 +240,12 @@ def save_to_history(task_id, file_info, results):
     except Exception as e:
         logger.error(f"Error saving to history: {e}")
 
+def _truncate_text(text, max_chars=5000):
+    """Truncate text to ~1000 words to speed up LLM processing."""
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + "\n\n[... transcript truncated for processing ...]"
+
 def process_video(task_id, video_path, audio_output):
     """Process video in background thread"""
     try:
@@ -260,17 +268,12 @@ def process_video(task_id, video_path, audio_output):
         # Generate title
         title = audio_output.split('/')[-1].split('.')[0]
         
-        processing_tasks[task_id]["status"] = "summarizing"
-        # Generate summary
-        summary = generate_notes(f'Please provide a concise summary of the following text:\n{transcript["text"]}')
-        
         processing_tasks[task_id]["status"] = "generating_notes"
-        # Generate notes
-        try:
-            notes = generate_notes(f'Summary: {summary} \n\n\nNotes:\n{transcript["text"]}')
-        except Exception as notes_error:
-            logger.error(f"Error generating notes: {str(notes_error)}", exc_info=True)
-            notes = f"Error generating notes: {str(notes_error)}"
+        # Single combined call: summary + notes in one LLM request
+        truncated = _truncate_text(transcript["text"])
+        combined = generate_notes(f'Generate a concise SUMMARY followed by detailed NOTES from this transcript:\n{truncated}')
+        summary = combined
+        notes = combined
             
         # Store results without generating flashcards
         results = {
@@ -355,13 +358,12 @@ def process_youtube_video(task_id, url):
         # Combine transcript segments into a single text
         transcript_text = " ".join([snippet.text for snippet in transcript_result.snippets])
         
-        # Generate summary
-        processing_tasks[task_id]["status"] = "summarizing"
-        summary = generate_notes(f'Please provide a concise summary of the following text:\n{transcript_text}')
-        
-        # Generate notes using the transcript
+        # Single combined call: summary + notes in one LLM request (2x faster)
         processing_tasks[task_id]["status"] = "generating_notes"
-        notes = generate_notes(f'Summary: {summary} \n\n\nNotes:\n{transcript_text}')
+        truncated = _truncate_text(transcript_text)
+        combined = generate_notes(f'Generate a concise SUMMARY followed by detailed NOTES from this transcript:\n{truncated}')
+        summary = combined
+        notes = combined
         
         # Update task status and results
         processing_tasks[task_id].update({
@@ -411,17 +413,12 @@ def process_pdf(task_id, pdf_path):
             processing_tasks[task_id]["error"] = "No text could be extracted from PDF"
             return
         
-        # Generate summary
-        processing_tasks[task_id]["status"] = "summarizing"
-        summary = generate_notes(f'Please provide a concise summary of the following text:\n{text}')
-        
+        # Single combined call: summary + notes in one LLM request (2x faster)
         processing_tasks[task_id]["status"] = "generating_notes"
-        # Generate notes
-        try:
-            notes = generate_notes(f'Summary: {summary} \n\n\nNotes:\n{text}')
-        except Exception as notes_error:
-            logger.error(f"Error generating notes: {str(notes_error)}", exc_info=True)
-            notes = f"Error generating notes: {str(notes_error)}"
+        truncated = _truncate_text(text)
+        combined = generate_notes(f'Generate a concise SUMMARY followed by detailed NOTES from this transcript:\n{truncated}')
+        summary = combined
+        notes = combined
             
         # Store results without generating flashcards
         results = {
