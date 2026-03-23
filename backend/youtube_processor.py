@@ -26,15 +26,27 @@ def extract_video_id(url):
 def get_transcript(video_id):
     """Get transcript from YouTube video."""
     try:
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
-        if not transcript_list:
+        ytt_api = YouTubeTranscriptApi()
+        
+        # Try English first, fall back to any available language
+        try:
+            transcript_result = ytt_api.fetch(video_id, languages=['en'])
+        except Exception:
+            transcript_list = ytt_api.list(video_id)
+            available = list(transcript_list)
+            if not available:
+                return None
+            transcript_result = available[0].fetch()
+        
+        if not transcript_result.snippets:
             return None
             
         # Combine all transcript segments into a single text
-        full_text = " ".join([segment["text"] for segment in transcript_list])
+        full_text = " ".join([snippet.text for snippet in transcript_result.snippets])
+        segments = [{"text": s.text, "start": s.start, "duration": s.duration} for s in transcript_result.snippets]
         return {
             "text": full_text,
-            "segments": transcript_list
+            "segments": segments
         }
     except Exception as e:
         logger.error(f"Error getting transcript: {str(e)}")

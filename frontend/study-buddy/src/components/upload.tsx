@@ -288,8 +288,8 @@ export function Upload({ onTaskIdUpdate }: UploadProps) {
 
   return (
     <div className="w-full max-w-3xl mx-auto p-4">
-      <Card className="bg-card shadow-lg border-0 overflow-hidden">
-        <CardHeader className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white p-6">
+      <Card className="bg-white dark:bg-[#1e1e2f] shadow-xl border-0 overflow-hidden rounded-2xl">
+        <CardHeader className="bg-gradient-to-br from-[#7c3aed] via-[#6d28d9] to-[#5b21b6] text-white p-6">
           <CardTitle className="text-2xl font-bold text-center">
             Upload Study Material
           </CardTitle>
@@ -305,24 +305,24 @@ export function Upload({ onTaskIdUpdate }: UploadProps) {
             onValueChange={setActiveTab}
             className="w-full"
           >
-            <TabsList className="grid w-full grid-cols-3 mb-6 rounded-lg">
+            <TabsList className="grid w-full grid-cols-3 mb-6 rounded-xl bg-[#f3f0ff] dark:bg-white/5 p-1">
               <TabsTrigger
                 value="file"
-                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-l-lg"
+                className="data-[state=active]:bg-[#7c3aed] data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-xs font-semibold"
               >
                 <File className="w-4 h-4 mr-2" />
                 Video Upload
               </TabsTrigger>
               <TabsTrigger
                 value="pdf"
-                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                className="data-[state=active]:bg-[#7c3aed] data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-xs font-semibold"
               >
                 <FileText className="w-4 h-4 mr-2" />
                 PDF Upload
               </TabsTrigger>
               <TabsTrigger
                 value="url"
-                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-r-lg"
+                className="data-[state=active]:bg-[#7c3aed] data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-xs font-semibold"
               >
                 <Youtube className="w-4 h-4 mr-2" />
                 YouTube URL
@@ -413,7 +413,7 @@ export function Upload({ onTaskIdUpdate }: UploadProps) {
 
               {!uploading && file && activeTab === "file" && (
                 <Button
-                  className="w-full h-12 mt-4 rounded-lg font-medium"
+                  className="w-full h-12 mt-4 rounded-xl font-semibold bg-[#7c3aed] hover:bg-[#6d28d9] text-white"
                   onClick={() => handleUpload(file)}
                   disabled={uploading}
                 >
@@ -514,7 +514,7 @@ export function Upload({ onTaskIdUpdate }: UploadProps) {
 
               {!uploading && file && activeTab === "pdf" && (
                 <Button
-                  className="w-full h-12 mt-4 rounded-lg font-medium bg-red-500 hover:bg-red-600"
+                  className="w-full h-12 mt-4 rounded-xl font-semibold bg-[#7c3aed] hover:bg-[#6d28d9] text-white"
                   onClick={() => handleUpload(file)}
                   disabled={uploading}
                 >
@@ -569,7 +569,7 @@ export function Upload({ onTaskIdUpdate }: UploadProps) {
                 )}
 
                 <Button
-                  className="w-full h-12 rounded-lg font-medium bg-red-500 hover:bg-red-600"
+                  className="w-full h-12 rounded-xl font-semibold bg-[#7c3aed] hover:bg-[#6d28d9] text-white"
                   onClick={handleYoutubeUrlSubmit}
                   disabled={!youtubeUrl || uploading}
                 >

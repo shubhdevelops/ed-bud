@@ -339,10 +339,21 @@ def process_youtube_video(task_id, url):
 
         # Get transcript from YouTube
         processing_tasks[task_id]["status"] = "transcribing"
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
+        ytt_api = YouTubeTranscriptApi()
+        
+        # Try fetching transcript - first try English, then fall back to any available language
+        try:
+            transcript_result = ytt_api.fetch(video_id, languages=['en'])
+        except Exception:
+            # If English not available, list available transcripts and pick the first one
+            transcript_list = ytt_api.list(video_id)
+            available = list(transcript_list)
+            if not available:
+                raise ValueError("No transcripts available for this video")
+            transcript_result = available[0].fetch()
         
         # Combine transcript segments into a single text
-        transcript_text = " ".join([segment["text"] for segment in transcript_list])
+        transcript_text = " ".join([snippet.text for snippet in transcript_result.snippets])
         
         # Generate summary
         processing_tasks[task_id]["status"] = "summarizing"
