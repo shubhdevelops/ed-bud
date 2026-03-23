@@ -15,7 +15,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
     <>
       <Sidebar />
       {/* Main content area — pushed right on desktop to make room for sidebar */}
-      <main className="md:ml-[250px] min-h-screen bg-[#f6f5f7] dark:bg-[#0f0f1a]">
+      <main className="md:ml-[260px] min-h-screen bg-[#f5f3ff] dark:bg-[#0a0a14] dot-pattern transition-colors duration-300">
         {children}
       </main>
     </>

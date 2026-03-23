@@ -10,10 +10,10 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
-  RefreshCw,
   Sparkles,
   AlertTriangle,
   CheckCircle2,
+  Zap,
 } from "lucide-react";
 
 interface Topic {
@@ -108,16 +108,13 @@ export default function PlannerPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      // Check if the plan has a valid schedule
       if (data.schedule && data.schedule.length > 0) {
         setPlan(data);
       } else {
-        // API returned but no valid schedule — use fallback
         setPlan(generateFallbackPlan());
       }
       setExpandedDay(0);
     } catch {
-      // API failed — use local fallback plan
       setPlan(generateFallbackPlan());
       setExpandedDay(0);
     } finally {
@@ -128,31 +125,36 @@ export default function PlannerPage() {
   const getPriorityColor = (priority: string) => {
     switch (priority?.toLowerCase()) {
       case "high":
-        return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
+        return "bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-400 border border-red-100 dark:border-red-500/20";
       case "medium":
-        return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400";
+        return "bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400 border border-amber-100 dark:border-amber-500/20";
       case "low":
-        return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
+        return "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/20";
       default:
-        return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400";
+        return "bg-gray-50 text-gray-600 dark:bg-white/5 dark:text-gray-400 border border-gray-100 dark:border-white/10";
     }
   };
 
+  const inputClass = "w-full px-4 py-3.5 rounded-xl bg-white dark:bg-white/[0.04] border border-gray-200 dark:border-white/8 text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#7c3aed]/40 focus:border-[#7c3aed]/50 transition-all text-sm";
+
   return (
-    <div className="max-w-5xl mx-auto p-4 space-y-6">
+    <div className="max-w-5xl mx-auto p-4 pb-8 space-y-6">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="rounded-2xl bg-gradient-to-r from-[#7c3aed] to-[#5b21b6] p-6 text-white shadow-xl"
+        className="rounded-2xl gradient-animated p-6 text-white shadow-2xl shadow-[#7c3aed]/20 relative overflow-hidden"
       >
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-            <Calendar className="w-7 h-7" />
+        <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
+        <div className="absolute bottom-0 left-10 w-20 h-20 bg-white/5 rounded-full translate-y-1/2" />
+
+        <div className="flex items-center gap-4 relative z-10">
+          <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-sm flex items-center justify-center border border-white/20">
+            <Calendar className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold">Study Planner</h1>
-            <p className="text-white/70 text-sm">
+            <h1 className="text-2xl font-bold tracking-tight">Study Planner</h1>
+            <p className="text-white/60 text-sm font-medium">
               AI-generated personalized study schedule
             </p>
           </div>
@@ -165,224 +167,137 @@ export default function PlannerPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           onSubmit={generatePlan}
-          className="rounded-2xl bg-white dark:bg-[#1e1e2e] border border-gray-200 dark:border-white/10 p-6 shadow-sm space-y-5"
+          className="rounded-2xl glass p-7 shadow-sm space-y-5"
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
-              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">
-                <BookOpen className="w-4 h-4 inline mr-1" />
-                Exam Name *
+              <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 dark:text-gray-400 mb-2">
+                <BookOpen className="w-4 h-4 text-[#7c3aed]" />
+                Exam Name
               </label>
-              <input
-                value={examName}
-                onChange={(e) => setExamName(e.target.value)}
-                placeholder="e.g. Final Semester Exam"
-                className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#7c3aed]/50"
-              />
+              <input value={examName} onChange={(e) => setExamName(e.target.value)} placeholder="e.g. Final Semester Exam" className={inputClass} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">
-                <Calendar className="w-4 h-4 inline mr-1" />
-                Exam Date *
+              <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 dark:text-gray-400 mb-2">
+                <Calendar className="w-4 h-4 text-[#7c3aed]" />
+                Exam Date
               </label>
-              <input
-                type="date"
-                value={examDate}
-                onChange={(e) => setExamDate(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#7c3aed]/50"
-              />
+              <input type="date" value={examDate} onChange={(e) => setExamDate(e.target.value)} className={inputClass} />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">
-              <Target className="w-4 h-4 inline mr-1" />
-              Subjects / Topics *
+            <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 dark:text-gray-400 mb-2">
+              <Target className="w-4 h-4 text-[#7c3aed]" />
+              Subjects / Topics
             </label>
             <textarea
-              value={subjects}
-              onChange={(e) => setSubjects(e.target.value)}
-              placeholder="e.g. Physics (Mechanics, Optics), Math (Calculus, Linear Algebra), Chemistry (Organic, Inorganic)"
-              rows={3}
-              className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#7c3aed]/50 resize-none"
+              value={subjects} onChange={(e) => setSubjects(e.target.value)}
+              placeholder="e.g. Physics (Mechanics, Optics), Math (Calculus, Linear Algebra)"
+              rows={3} className={`${inputClass} resize-none`}
             />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
-              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">
-                <AlertTriangle className="w-4 h-4 inline mr-1" />
-                Weak Areas (optional)
+              <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 dark:text-gray-400 mb-2">
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                Weak Areas <span className="text-gray-400 font-normal">(optional)</span>
               </label>
-              <input
-                value={weakAreas}
-                onChange={(e) => setWeakAreas(e.target.value)}
-                placeholder="e.g. Calculus, Organic Chemistry"
-                className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#7c3aed]/50"
-              />
+              <input value={weakAreas} onChange={(e) => setWeakAreas(e.target.value)} placeholder="e.g. Calculus, Organic Chemistry" className={inputClass} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">
-                <Clock className="w-4 h-4 inline mr-1" />
+              <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 dark:text-gray-400 mb-2">
+                <Clock className="w-4 h-4 text-[#7c3aed]" />
                 Daily Study Hours
               </label>
-              <input
-                type="number"
-                min={1}
-                max={12}
-                value={dailyHours}
-                onChange={(e) => setDailyHours(Number(e.target.value))}
-                className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#7c3aed]/50"
-              />
+              <input type="number" min={1} max={12} value={dailyHours} onChange={(e) => setDailyHours(Number(e.target.value))} className={inputClass} />
             </div>
           </div>
 
-          {error && (
-            <p className="text-red-500 text-sm">{error}</p>
-          )}
+          {error && <p className="text-red-500 text-sm">{error}</p>}
 
-          <button
+          <motion.button
             type="submit"
             disabled={isLoading}
-            className="w-full py-4 rounded-xl bg-[#7c3aed] hover:bg-[#6d28d9] text-white font-semibold text-base transition shadow-lg shadow-[#7c3aed]/25 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.99 }}
+            className="w-full py-4 rounded-xl bg-gradient-to-r from-[#7c3aed] to-[#6366f1] text-white font-semibold text-base transition shadow-lg shadow-[#7c3aed]/20 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer btn-premium"
           >
             {isLoading ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                Generating your plan...
-              </>
+              <><Loader2 className="w-5 h-5 animate-spin" /> Generating your plan...</>
             ) : (
-              <>
-                <Sparkles className="w-5 h-5" />
-                Generate Study Plan
-              </>
+              <><Sparkles className="w-5 h-5" /> Generate Study Plan</>
             )}
-          </button>
+          </motion.button>
         </motion.form>
       )}
 
       {/* Plan Display */}
       {plan && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-4"
-        >
-          {/* Plan header */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-bold text-gray-800 dark:text-white">
-                {plan.planName || `Plan for ${examName}`}
-              </h2>
-              <p className="text-sm text-gray-500">
-                {plan.totalDays || plan.schedule?.length || 0} days •{" "}
-                {plan.dailyHours || dailyHours}h/day
-              </p>
+              <h2 className="text-xl font-bold text-gray-800 dark:text-white">{plan.planName || `Plan for ${examName}`}</h2>
+              <p className="text-sm text-gray-500">{plan.totalDays || plan.schedule?.length || 0} days • {plan.dailyHours || dailyHours}h/day</p>
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setPlan(null)}
-                className="px-4 py-2 rounded-xl bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 text-sm hover:bg-gray-200 dark:hover:bg-white/20 transition cursor-pointer"
-              >
-                New Plan
-              </button>
-            </div>
+            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setPlan(null)} className="px-4 py-2 rounded-xl bg-white dark:bg-white/5 text-gray-600 dark:text-gray-300 text-sm hover:shadow-md transition cursor-pointer border border-gray-200 dark:border-white/10">
+              New Plan
+            </motion.button>
           </div>
 
-          {/* Tips */}
           {plan.tips && plan.tips.length > 0 && (
-            <div className="rounded-xl bg-[#7c3aed]/5 border border-[#7c3aed]/20 p-4">
-              <p className="text-sm font-semibold text-[#7c3aed] mb-2">
-                💡 Tips
-              </p>
+            <div className="rounded-xl glass p-4 border-l-4 border-[#7c3aed]">
+              <p className="text-sm font-bold text-[#7c3aed] mb-2 flex items-center gap-1.5"><Zap className="w-4 h-4" /> Pro Tips</p>
               <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                {plan.tips.map((tip, i) => (
-                  <li key={i}>• {tip}</li>
-                ))}
+                {plan.tips.map((tip, i) => <li key={i}>• {tip}</li>)}
               </ul>
             </div>
           )}
 
-          {/* Schedule */}
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {plan.schedule?.map((day, idx) => (
               <motion.div
                 key={idx}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.05 }}
-                className="rounded-xl bg-white dark:bg-[#1e1e2e] border border-gray-200 dark:border-white/10 overflow-hidden shadow-sm"
+                transition={{ delay: idx * 0.03 }}
+                className="rounded-xl glass overflow-hidden card-hover"
               >
                 <button
-                  onClick={() =>
-                    setExpandedDay(expandedDay === idx ? null : idx)
-                  }
-                  className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-white/5 transition cursor-pointer"
+                  onClick={() => setExpandedDay(expandedDay === idx ? null : idx)}
+                  className="w-full flex items-center justify-between p-4 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition cursor-pointer"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-[#7c3aed]/10 flex items-center justify-center text-[#7c3aed] font-bold text-sm">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#7c3aed]/10 to-[#6366f1]/10 flex items-center justify-center text-[#7c3aed] font-bold text-sm border border-[#7c3aed]/10">
                       D{day.day || idx + 1}
                     </div>
                     <div className="text-left">
-                      <p className="font-medium text-gray-800 dark:text-white text-sm">
+                      <p className="font-semibold text-gray-800 dark:text-white text-sm">
                         Day {day.day || idx + 1}
-                        {day.date && (
-                          <span className="text-gray-400 ml-2">
-                            {day.date}
-                          </span>
-                        )}
+                        {day.date && <span className="text-gray-400 ml-2 font-normal">{day.date}</span>}
                       </p>
-                      <p className="text-xs text-gray-500">
-                        {day.topics?.length || 0} topics
-                      </p>
+                      <p className="text-xs text-gray-400">{day.topics?.length || 0} topics</p>
                     </div>
                   </div>
-                  {expandedDay === idx ? (
-                    <ChevronUp className="w-5 h-5 text-gray-400" />
-                  ) : (
-                    <ChevronDown className="w-5 h-5 text-gray-400" />
-                  )}
+                  {expandedDay === idx ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
                 </button>
 
                 <AnimatePresence>
                   {expandedDay === idx && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="border-t border-gray-100 dark:border-white/5"
-                    >
-                      <div className="p-4 space-y-3">
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="border-t border-gray-100 dark:border-white/5">
+                      <div className="p-4 space-y-2.5">
                         {day.topics?.map((topic, ti) => (
-                          <div
-                            key={ti}
-                            className="flex items-start gap-3 p-3 rounded-lg bg-gray-50 dark:bg-white/5"
-                          >
-                            <CheckCircle2 className="w-5 h-5 text-gray-300 dark:text-white/20 mt-0.5 shrink-0" />
+                          <div key={ti} className="flex items-start gap-3 p-3 rounded-xl bg-gray-50/50 dark:bg-white/[0.02] border border-gray-100 dark:border-white/5">
+                            <CheckCircle2 className="w-5 h-5 text-gray-300 dark:text-white/15 mt-0.5 shrink-0" />
                             <div className="flex-1">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-medium text-gray-800 dark:text-white text-sm">
-                                  {topic.subject}
-                                </p>
-                                <span
-                                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${getPriorityColor(
-                                    topic.priority
-                                  )}`}
-                                >
-                                  {topic.priority}
-                                </span>
-                                <span className="text-xs text-gray-400">
-                                  {topic.duration}
-                                </span>
+                                <p className="font-semibold text-gray-800 dark:text-white text-sm">{topic.subject}</p>
+                                <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${getPriorityColor(topic.priority)}`}>{topic.priority}</span>
+                                <span className="text-xs text-gray-400 font-medium">{topic.duration}</span>
                               </div>
-                              <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
-                                {topic.topic}
-                              </p>
-                              {topic.tips && (
-                                <p className="text-xs text-[#7c3aed] mt-1">
-                                  💡 {topic.tips}
-                                </p>
-                              )}
+                              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{topic.topic}</p>
+                              {topic.tips && <p className="text-xs text-[#7c3aed] mt-1 font-medium">💡 {topic.tips}</p>}
                             </div>
                           </div>
                         ))}
