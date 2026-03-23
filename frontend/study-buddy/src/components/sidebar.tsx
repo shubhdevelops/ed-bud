@@ -19,6 +19,7 @@ import {
   Calendar,
   Brain,
   Sparkles,
+  LayoutDashboard,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 
@@ -57,6 +58,11 @@ export function Sidebar() {
   };
 
   const navItems: NavItem[] = [
+    {
+      label: "Dashboard",
+      href: "/dashboard",
+      icon: <LayoutDashboard className="w-[18px] h-[18px]" />,
+    },
     {
       label: "Upload",
       href: "/",
